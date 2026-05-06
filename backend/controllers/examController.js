@@ -35,7 +35,17 @@ export const submitExam = async (req, res) => {
   try {
     const { examId, answers } = req.body;
 
+    // Check if the student already submitted this exam
+    const existingResult = await Result.findOne({ student: req.user._id, exam: examId });
+    if (existingResult) {
+      return res.status(400).json({ message: "Exam already submitted" });
+    }
+
     const exam = await Exam.findById(examId);
+
+    if (!exam) {
+      return res.status(404).json({ message: "Exam not found" });
+    }
 
     let score = 0;
 
