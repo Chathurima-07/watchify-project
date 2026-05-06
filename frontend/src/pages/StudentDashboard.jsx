@@ -71,9 +71,15 @@ function StudentDashboard() {
             <h3>{exam.title}</h3>
             <p>Duration: {exam.duration} mins</p>
 
-            <button onClick={() => navigate(`/exam/${exam._id}`)}>
-              Start Exam
-            </button>
+            {results.find((r) => r.exam?._id === exam._id) ? (
+              <p style={{ color: "green", fontWeight: "bold" }}>
+                ✅ Completed (Score: {results.find((r) => r.exam?._id === exam._id).score}/{results.find((r) => r.exam?._id === exam._id).total})
+              </p>
+            ) : (
+              <button onClick={() => navigate(`/exam/${exam._id}`)}>
+                Start Exam
+              </button>
+            )}
           </div>
         ))
       )}
