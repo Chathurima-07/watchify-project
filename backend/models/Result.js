@@ -10,8 +10,19 @@ const resultSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Exam",
     },
-    score: Number,
-    total: Number,
+    score: { type: Number, default: 0 },
+    total: { type: Number, default: 0 },
+    status: {
+      type: String,
+      enum: ["Ongoing", "Completed"],
+      default: "Ongoing",
+    },
+    violations: [
+      {
+        type: { type: String }, // e.g., "Tab Switch", "Exit Fullscreen"
+        timestamp: { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true }
 );

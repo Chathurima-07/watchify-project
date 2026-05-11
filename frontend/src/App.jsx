@@ -1,7 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
+import Register from "./pages/Register";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminStudentDetails from "./pages/AdminStudentDetails";
+import AdminMentorDetails from "./pages/AdminMentorDetails";
 import MentorDashboard from "./pages/MentorDashboard";
+import MentorExamDetails from "./pages/MentorExamDetails";
 import StudentDashboard from "./pages/StudentDashboard";
 import ExamPage from "./pages/ExamPage";
 
@@ -31,6 +35,7 @@ function App() {
 
         {/* Login */}
         <Route path="/" element={<Login />} />
+        <Route path="/register" element={<Register />} />
 
         {/* Admin */}
         <Route
@@ -41,6 +46,22 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/admin/student/:id"
+          element={
+            <ProtectedRoute role="admin">
+              <AdminStudentDetails />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/mentor/:id"
+          element={
+            <ProtectedRoute role="admin">
+              <AdminMentorDetails />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Mentor */}
         <Route
@@ -48,6 +69,14 @@ function App() {
           element={
             <ProtectedRoute role="mentor">
               <MentorDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/mentor/exam/:id"
+          element={
+            <ProtectedRoute role="mentor">
+              <MentorExamDetails />
             </ProtectedRoute>
           }
         />
