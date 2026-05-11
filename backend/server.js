@@ -7,6 +7,9 @@ import { protect } from "./middleware/authMiddleware.js";
 import { authorizeRoles } from "./middleware/roleMiddleware.js";
 import roleRoutes from "./routes/roleRoutes.js";
 import examRoutes from "./routes/examRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
+import mentorRoutes from "./routes/mentorRoutes.js";
+import violationRoutes from "./routes/violationRoutes.js";
 
 
 dotenv.config();
@@ -19,6 +22,9 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api", roleRoutes);
 app.use("/api/exams", examRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/mentor", mentorRoutes);
+app.use("/api/violations", violationRoutes);
 
 // DB connection
 connectDB();
