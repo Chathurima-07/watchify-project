@@ -80,7 +80,6 @@ function ExamPage() {
 
   if (!exam) return <p>Loading...</p>;
 
-  // Format time
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;
 

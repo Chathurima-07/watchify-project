@@ -1,7 +1,6 @@
 import Exam from "../models/Exam.js";
 import Result from "../models/Result.js";
 
-// CREATE EXAM (MENTOR ONLY)
 export const createExam = async (req, res) => {
   try {
     const { title, duration, questions } = req.body;
