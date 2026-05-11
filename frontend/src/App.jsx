@@ -8,6 +8,7 @@ import MentorDashboard from "./pages/MentorDashboard";
 import MentorExamDetails from "./pages/MentorExamDetails";
 import StudentDashboard from "./pages/StudentDashboard";
 import ExamPage from "./pages/ExamPage";
+import StudentResultDetails from "./pages/StudentResultDetails";
 
 
 // 🔒 Protected Route Component
@@ -98,6 +99,14 @@ function App() {
             </ProtectedRoute>
           }
 />
+        <Route
+          path="/student/result/:id"
+          element={
+            <ProtectedRoute role="student">
+              <StudentResultDetails />
+            </ProtectedRoute>
+          }
+        />
 
       </Routes>
     </BrowserRouter>

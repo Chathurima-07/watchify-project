@@ -113,6 +113,15 @@ export default function MentorDashboard() {
   const [qSearch, setQSearch] = useState("");
   const [qExam, setQExam] = useState("all");
   const [qSort, setQSort] = useState("newest");
+  const [qFromDate, setQFromDate] = useState("");
+  const [qToDate, setQToDate] = useState("");
+  const [vExam, setVExam] = useState("all");
+  const [vSeverity, setVSeverity] = useState("all");
+  const [vFromDate, setVFromDate] = useState("");
+  const [vToDate, setVToDate] = useState("");
+  const [editingExamId, setEditingExamId] = useState("");
+  const [editingTitle, setEditingTitle] = useState("");
+  const [editingDuration, setEditingDuration] = useState(60);
 
   const user = useMemo(() => {
     try {
@@ -140,9 +149,15 @@ export default function MentorDashboard() {
       ]);
 
       setStats(statsRes.data || null);
-      setExams(Array.isArray(examsRes.data) ? examsRes.data : []);
-      setResults(Array.isArray(resultsRes.data) ? resultsRes.data : []);
-      setViolations(Array.isArray(violationsRes.data) ? violationsRes.data : []);
+      setExams(Array.isArray(examsRes.data?.exams) ? examsRes.data.exams : Array.isArray(examsRes.data) ? examsRes.data : []);
+      setResults(Array.isArray(resultsRes.data?.results) ? resultsRes.data.results : Array.isArray(resultsRes.data) ? resultsRes.data : []);
+      setViolations(
+        Array.isArray(violationsRes.data?.violations)
+          ? violationsRes.data.violations
+          : Array.isArray(violationsRes.data)
+          ? violationsRes.data
+          : []
+      );
     } catch (e) {
       if (e?.response?.status === 401) {
         navigate("/");
@@ -249,6 +264,43 @@ export default function MentorDashboard() {
     }
   };
 
+  const startEditExam = (exam) => {
+    setEditingExamId(String(exam?._id || ""));
+    setEditingTitle(String(exam?.title || ""));
+    setEditingDuration(Number(exam?.duration || 60));
+  };
+
+  const cancelEditExam = () => {
+    setEditingExamId("");
+    setEditingTitle("");
+    setEditingDuration(60);
+  };
+
+  const saveEditExam = async () => {
+    if (!editingExamId) return;
+    const trimmedTitle = editingTitle.trim();
+    if (!trimmedTitle) {
+      alert("Exam title is required.");
+      return;
+    }
+    if (!editingDuration || Number(editingDuration) <= 0) {
+      alert("Duration must be greater than 0.");
+      return;
+    }
+    try {
+      await axios.put(
+        `${API_BASE}/api/mentor/exams/${editingExamId}`,
+        { title: trimmedTitle, duration: Number(editingDuration) },
+        { headers: authHeaders() }
+      );
+      await loadAll();
+      cancelEditExam();
+    } catch (e) {
+      if (e?.response?.status === 401) navigate("/");
+      alert(e?.response?.data?.message || e.message || "Failed to update exam.");
+    }
+  };
+
   const deleteExam = async (examId) => {
     const ok = confirm("Delete this exam? This cannot be undone.");
     if (!ok) return;
@@ -314,13 +366,44 @@ export default function MentorDashboard() {
         return n.includes(q) || e.includes(q);
       });
     }
+    if (qFromDate) {
+      const fromDate = new Date(qFromDate);
+      if (!Number.isNaN(fromDate.getTime())) {
+        arr = arr.filter((r) => new Date(r.submittedAt || 0).getTime() >= fromDate.getTime());
+      }
+    }
+    if (qToDate) {
+      const toDate = new Date(`${qToDate}T23:59:59.999`);
+      if (!Number.isNaN(toDate.getTime())) {
+        arr = arr.filter((r) => new Date(r.submittedAt || 0).getTime() <= toDate.getTime());
+      }
+    }
     arr.sort((a, b) => {
       const ta = new Date(a.submittedAt || 0).getTime();
       const tb = new Date(b.submittedAt || 0).getTime();
       return qSort === "oldest" ? ta - tb : tb - ta;
     });
     return arr;
-  }, [results, qSearch, qExam, qSort]);
+  }, [results, qSearch, qExam, qSort, qFromDate, qToDate]);
+
+  const filteredViolations = useMemo(() => {
+    let arr = [...violations];
+    if (vExam !== "all") arr = arr.filter((v) => String(v.exam?._id || "") === String(vExam));
+    if (vSeverity !== "all") arr = arr.filter((v) => String(v.severity || "") === vSeverity);
+    if (vFromDate) {
+      const fromDate = new Date(vFromDate);
+      if (!Number.isNaN(fromDate.getTime())) {
+        arr = arr.filter((v) => new Date(v.timestamp || 0).getTime() >= fromDate.getTime());
+      }
+    }
+    if (vToDate) {
+      const toDate = new Date(`${vToDate}T23:59:59.999`);
+      if (!Number.isNaN(toDate.getTime())) {
+        arr = arr.filter((v) => new Date(v.timestamp || 0).getTime() <= toDate.getTime());
+      }
+    }
+    return arr;
+  }, [violations, vExam, vSeverity, vFromDate, vToDate]);
 
   return (
     <div className="mentor-shell">
@@ -742,6 +825,10 @@ export default function MentorDashboard() {
                                 <Eye size={16} />
                                 View Details
                               </button>
+                              <button className="men-btn" onClick={() => startEditExam(e)}>
+                                <Settings size={16} />
+                                Edit
+                              </button>
                               <button className="men-btn" onClick={() => deleteExam(e._id)}>
                                 <Trash2 size={16} />
                                 Delete
@@ -752,6 +839,28 @@ export default function MentorDashboard() {
                       </tbody>
                     </table>
                   </div>
+                  {editingExamId ? (
+                    <div className="men-card" style={{ marginTop: 12, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                      <div className="men-card-inner" style={{ display: "grid", gap: 10 }}>
+                        <div className="men-card-title">
+                          <h3>Edit Exam</h3>
+                          <span className="men-pill blue">{editingExamId}</span>
+                        </div>
+                        <input className="men-input" value={editingTitle} onChange={(e) => setEditingTitle(e.target.value)} placeholder="Exam title" />
+                        <input className="men-input" type="number" min={1} value={editingDuration} onChange={(e) => setEditingDuration(e.target.value)} />
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                          <button className="men-btn primary" onClick={saveEditExam}>
+                            <BadgeCheck size={16} />
+                            Save Changes
+                          </button>
+                          <button className="men-btn" onClick={cancelEditExam}>
+                            <X size={16} />
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                 </Card>
               </SectionShell>
             ) : null}
@@ -763,7 +872,7 @@ export default function MentorDashboard() {
                   kicker="Search, filter, and sort submissions"
                   right={<span className="men-pill blue"><GraduationCap size={14} /> {filteredResults.length}</span>}
                 >
-                  <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
                     <input
                       className="men-input"
                       value={qSearch}
@@ -782,6 +891,8 @@ export default function MentorDashboard() {
                       <option value="newest">Newest first</option>
                       <option value="oldest">Oldest first</option>
                     </select>
+                    <input className="men-input" type="date" value={qFromDate} onChange={(e) => setQFromDate(e.target.value)} />
+                    <input className="men-input" type="date" value={qToDate} onChange={(e) => setQToDate(e.target.value)} />
                   </div>
 
                   <div className="men-table-wrap">
@@ -826,6 +937,24 @@ export default function MentorDashboard() {
             {active === "monitoring" ? (
               <SectionShell key="monitoring">
                 <Card title="Monitoring Alerts" kicker="Real violations captured during exams">
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
+                    <select className="men-select" value={vExam} onChange={(e) => setVExam(e.target.value)}>
+                      <option value="all">All exams</option>
+                      {exams.map((e) => (
+                        <option key={e._id} value={e._id}>
+                          {e.title}
+                        </option>
+                      ))}
+                    </select>
+                    <select className="men-select" value={vSeverity} onChange={(e) => setVSeverity(e.target.value)}>
+                      <option value="all">All severity</option>
+                      <option value="Low">Low</option>
+                      <option value="Medium">Medium</option>
+                      <option value="High">High</option>
+                    </select>
+                    <input className="men-input" type="date" value={vFromDate} onChange={(e) => setVFromDate(e.target.value)} />
+                    <input className="men-input" type="date" value={vToDate} onChange={(e) => setVToDate(e.target.value)} />
+                  </div>
                   <div className="men-table-wrap">
                     <table className="men-table">
                       <thead>
@@ -840,14 +969,14 @@ export default function MentorDashboard() {
                         </tr>
                       </thead>
                       <tbody>
-                        {!loading && !violations.length ? (
+                        {!loading && !filteredViolations.length ? (
                           <tr>
                             <td colSpan={7} style={{ padding: 18, color: "rgba(255,255,255,0.62)" }}>
                               No monitoring alerts yet.
                             </td>
                           </tr>
                         ) : null}
-                        {violations.map((v) => (
+                        {filteredViolations.map((v) => (
                           <tr key={v._id}>
                             <td style={{ fontWeight: 750 }}>{v.student?.name || "—"}</td>
                             <td style={{ color: "rgba(255,255,255,0.72)" }}>{v.student?.email || "—"}</td>

@@ -166,6 +166,9 @@ function AdminDashboard() {
   const [riskDistribution, setRiskDistribution] = useState([]);
   const [suspiciousActivityTrend, setSuspiciousActivityTrend] = useState([]);
   const [recentExports, setRecentExports] = useState([]);
+  const [reportDateRange, setReportDateRange] = useState("last30");
+  const [reportRole, setReportRole] = useState("all");
+  const [reportRisk, setReportRisk] = useState("any");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -269,6 +272,20 @@ function AdminDashboard() {
     localStorage.removeItem("user");
     navigate("/");
   };
+
+  const filteredExports = useMemo(() => {
+    let rows = [...recentExports];
+    if (reportRole !== "all") {
+      rows = rows.filter((r) => String(r.report || "").toLowerCase().includes(reportRole));
+    }
+    if (reportDateRange !== "last30") {
+      rows = rows.filter((r) => String(r.range || "").toLowerCase().includes(reportDateRange.toLowerCase()));
+    }
+    if (reportRisk !== "any") {
+      rows = rows.filter((r) => String(r.report || "").toLowerCase().includes(reportRisk));
+    }
+    return rows;
+  }, [recentExports, reportDateRange, reportRole, reportRisk]);
 
   const sectionTitle =
     active === "dashboard"
@@ -670,10 +687,11 @@ function AdminDashboard() {
                               </button>
                               <button
                                 className="btn danger"
-                                onClick={() => alert("Disable mentor action (mock).")}
+                                disabled
+                                title="Mentor status control will be wired to a dedicated admin action endpoint."
                               >
                                 <Settings size={16} />
-                                Disable
+                                Status Control
                               </button>
                             </td>
                           </tr>
@@ -792,19 +810,19 @@ function AdminDashboard() {
                     }
                   >
                     <div className="filters">
-                      <select className="select" defaultValue="last30">
+                      <select className="select" value={reportDateRange} onChange={(e) => setReportDateRange(e.target.value)}>
                         <option value="last7">Last 7 days</option>
                         <option value="last30">Last 30 days</option>
-                        <option value="jan2026">Jan 2026</option>
-                        <option value="feb2026">Feb 2026</option>
+                        <option value="jan">Jan</option>
+                        <option value="feb">Feb</option>
                       </select>
-                      <select className="select" defaultValue="all">
+                      <select className="select" value={reportRole} onChange={(e) => setReportRole(e.target.value)}>
                         <option value="all">All roles</option>
                         <option value="student">Students</option>
                         <option value="mentor">Mentors</option>
                         <option value="admin">Admins</option>
                       </select>
-                      <select className="select" defaultValue="any">
+                      <select className="select" value={reportRisk} onChange={(e) => setReportRisk(e.target.value)}>
                         <option value="any">Any risk level</option>
                         <option value="low">Low Risk</option>
                         <option value="medium">Medium Risk</option>
@@ -819,9 +837,9 @@ function AdminDashboard() {
                       kicker="Export detailed performance and behavior reports for all students"
                       right={<Users size={18} color="rgba(160,190,255,0.95)" />}
                     >
-                      <button className="btn primary" onClick={() => alert("Downloading Student Reports (mock).")}>
+                      <button className="btn primary" disabled>
                         <Download size={16} />
-                        Download Report
+                        Export via backend
                       </button>
                     </Card>
                     <Card
@@ -829,9 +847,9 @@ function AdminDashboard() {
                       kicker="Export monitoring statistics and performance metrics for mentors"
                       right={<UserSquare2 size={18} color="rgba(160,190,255,0.95)" />}
                     >
-                      <button className="btn primary" onClick={() => alert("Downloading Mentor Reports (mock).")}>
+                      <button className="btn primary" disabled>
                         <Download size={16} />
-                        Download Report
+                        Export via backend
                       </button>
                     </Card>
                     <Card
@@ -839,9 +857,9 @@ function AdminDashboard() {
                       kicker="Export comprehensive system-wide analytics and statistics"
                       right={<BarChart3 size={18} color="rgba(160,190,255,0.95)" />}
                     >
-                      <button className="btn primary" onClick={() => alert("Downloading System Reports (mock).")}>
+                      <button className="btn primary" disabled>
                         <Download size={16} />
-                        Download Report
+                        Export via backend
                       </button>
                     </Card>
                   </div>
@@ -859,26 +877,23 @@ function AdminDashboard() {
                           </tr>
                         </thead>
                         <tbody>
-                          {!loading && !recentExports.length ? (
+                          {!loading && !filteredExports.length ? (
                             <tr>
                               <td colSpan={5} style={{ padding: 18, color: "rgba(255,255,255,0.62)" }}>
                                 No exports recorded yet.
                               </td>
                             </tr>
                           ) : null}
-                          {recentExports.map((r) => (
+                          {filteredExports.map((r) => (
                             <tr key={r.report}>
                               <td style={{ fontWeight: 750 }}>{r.report}</td>
                               <td>{r.date}</td>
                               <td style={{ color: "rgba(255,255,255,0.72)" }}>{r.range}</td>
                               <td>{r.size}</td>
                               <td style={{ textAlign: "right" }}>
-                                <button
-                                  className="btn"
-                                  onClick={() => alert(`Downloading ${r.report} (mock).`)}
-                                >
+                                <button className="btn" disabled>
                                   <Download size={16} />
-                                  Download
+                                  Await export API
                                 </button>
                               </td>
                             </tr>

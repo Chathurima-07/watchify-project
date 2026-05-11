@@ -25,10 +25,18 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 .admin-shell {
   min-height: 100vh;
   color: var(--adm-text);
   font-family: var(--wf-font);
+  overflow-x: hidden;
   background:
     radial-gradient(900px 700px at 18% 20%, rgba(47, 109, 255, 0.22), transparent 60%),
     radial-gradient(800px 650px at 85% 30%, rgba(107, 60, 255, 0.18), transparent 58%),
@@ -40,6 +48,7 @@
   display: grid;
   grid-template-columns: var(--adm-sidebar-w) 1fr;
   min-height: 100vh;
+  min-width: 0;
 }
 
 .admin-topbar {
@@ -203,6 +212,8 @@
 
 .admin-main {
   padding: 22px 22px 40px;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .admin-page-header {
@@ -229,6 +240,7 @@
 .admin-grid {
   display: grid;
   gap: 14px;
+  min-width: 0;
 }
 
 .admin-grid.stats {
@@ -297,15 +309,18 @@
 }
 
 .admin-table-wrap {
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.08);
+  width: 100%;
 }
 
 .admin-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 860px;
+  min-width: 0;
+  table-layout: fixed;
 }
 
 .admin-table th,
@@ -314,7 +329,9 @@
   padding: 12px 12px;
   font-size: 13px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .admin-table th {
