@@ -4,11 +4,13 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Activity,
+  AlertTriangle,
   BadgeCheck,
   BookOpen,
   ClipboardList,
   Eye,
   FilePlus2,
+  Flag,
   GraduationCap,
   LayoutDashboard,
   LogOut,
@@ -123,6 +125,12 @@ export default function MentorDashboard() {
   const [editingTitle, setEditingTitle] = useState("");
   const [editingDuration, setEditingDuration] = useState(60);
 
+  const [flaggedStudents, setFlaggedStudents] = useState([]);
+  const [flagModal, setFlagModal] = useState(null);
+  const [flagReason, setFlagReason] = useState("");
+  const [flagSeverity, setFlagSeverity] = useState("High");
+  const [flagSubmitting, setFlagSubmitting] = useState(false);
+
   const user = useMemo(() => {
     try {
       return JSON.parse(localStorage.getItem("user") || "null");
@@ -141,13 +149,15 @@ export default function MentorDashboard() {
     setLoading(true);
     setError("");
     try {
-      const [statsRes, examsRes, resultsRes, violationsRes] = await Promise.all([
+      const [flagsRes, statsRes, examsRes, resultsRes, violationsRes] = await Promise.all([
+        axios.get(`${API_BASE}/api/flags`, { headers: authHeaders(), signal }),
         axios.get(`${API_BASE}/api/mentor/stats`, { headers: authHeaders(), signal }),
         axios.get(`${API_BASE}/api/mentor/exams`, { headers: authHeaders(), signal }),
         axios.get(`${API_BASE}/api/mentor/results`, { headers: authHeaders(), signal }),
         axios.get(`${API_BASE}/api/mentor/violations`, { headers: authHeaders(), signal }),
       ]);
 
+      setFlaggedStudents(Array.isArray(flagsRes.data?.students) ? flagsRes.data.students : []);
       setStats(statsRes.data || null);
       setExams(Array.isArray(examsRes.data?.exams) ? examsRes.data.exams : Array.isArray(examsRes.data) ? examsRes.data : []);
       setResults(Array.isArray(resultsRes.data?.results) ? resultsRes.data.results : Array.isArray(resultsRes.data) ? resultsRes.data : []);
@@ -159,7 +169,9 @@ export default function MentorDashboard() {
           : []
       );
     } catch (e) {
-      if (e?.response?.status === 401) {
+      if (e?.response?.status === 401 || e?.response?.status === 403) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
         navigate("/");
         return;
       }
@@ -178,7 +190,7 @@ export default function MentorDashboard() {
 
   // Auto-refresh monitoring + results like “mentor updating” behavior
   useEffect(() => {
-    if (active !== "monitoring" && active !== "results" && active !== "dashboard") return;
+    if (active !== "monitoring" && active !== "results" && active !== "dashboard" && active !== "flagged") return;
     const interval = setInterval(() => {
       loadAll();
     }, 5000);
@@ -257,7 +269,12 @@ export default function MentorDashboard() {
       await loadAll();
       setActive("myExams");
     } catch (e2) {
-      if (e2?.response?.status === 401) navigate("/");
+      if (e2?.response?.status === 401 || e2?.response?.status === 403) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        navigate("/");
+        return;
+      }
       alert(e2?.response?.data?.message || e2.message || "Failed to create exam.");
     } finally {
       setCreating(false);
@@ -296,7 +313,12 @@ export default function MentorDashboard() {
       await loadAll();
       cancelEditExam();
     } catch (e) {
-      if (e?.response?.status === 401) navigate("/");
+      if (e?.response?.status === 401 || e?.response?.status === 403) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        navigate("/");
+        return;
+      }
       alert(e?.response?.data?.message || e.message || "Failed to update exam.");
     }
   };
@@ -308,7 +330,12 @@ export default function MentorDashboard() {
       await axios.delete(`${API_BASE}/api/mentor/exams/${examId}`, { headers: authHeaders() });
       await loadAll();
     } catch (e) {
-      if (e?.response?.status === 401) navigate("/");
+      if (e?.response?.status === 401 || e?.response?.status === 403) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        navigate("/");
+        return;
+      }
       alert(e?.response?.data?.message || e.message || "Failed to delete exam.");
     }
   };
@@ -324,6 +351,8 @@ export default function MentorDashboard() {
       ? "Student Results"
       : active === "monitoring"
       ? "Monitoring"
+      : active === "flagged"
+      ? "Flagged Students"
       : "Settings";
 
   const sectionSubtitle =
@@ -337,6 +366,8 @@ export default function MentorDashboard() {
       ? "Filter and review student submissions for your exams"
       : active === "monitoring"
       ? "Live integrity alerts captured during exam sessions"
+      : active === "flagged"
+      ? "Students you have access to who are marked for review"
       : "Mentor account and dashboard controls";
 
   const recentExams = useMemo(() => exams.slice(0, 5), [exams]);
@@ -405,6 +436,58 @@ export default function MentorDashboard() {
     return arr;
   }, [violations, vExam, vSeverity, vFromDate, vToDate]);
 
+  const violationCountByStudent = useMemo(() => {
+    const m = new Map();
+    for (const v of violations) {
+      const sid = v?.student?._id ? String(v.student._id) : "";
+      if (!sid) continue;
+      m.set(sid, (m.get(sid) || 0) + 1);
+    }
+    return m;
+  }, [violations]);
+
+  const openFlagStudentModal = ({ studentId, studentName, violationType }) => {
+    setFlagSubmitting(false);
+    setFlagModal({ studentId, studentName, violationType: violationType || "—" });
+    setFlagReason("");
+    setFlagSeverity("High");
+  };
+
+  const closeFlagStudentModal = () => {
+    setFlagModal(null);
+    setFlagReason("");
+    setFlagSubmitting(false);
+  };
+
+  const submitFlagStudent = async () => {
+    if (!flagModal?.studentId) return;
+    const reason = flagReason.trim();
+    if (!reason) {
+      alert("Please enter a reason.");
+      return;
+    }
+    setFlagSubmitting(true);
+    try {
+      await axios.post(
+        `${API_BASE}/api/flags/${encodeURIComponent(flagModal.studentId)}`,
+        { reason, severity: flagSeverity },
+        { headers: authHeaders() }
+      );
+      closeFlagStudentModal();
+      await loadAll();
+    } catch (e) {
+      if (e?.response?.status === 401 || e?.response?.status === 403) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        navigate("/");
+        return;
+      }
+      alert(e?.response?.data?.message || e.message || "Failed to flag student.");
+    } finally {
+      setFlagSubmitting(false);
+    }
+  };
+
   return (
     <div className="mentor-shell">
       <div className="mentor-layout">
@@ -469,6 +552,12 @@ export default function MentorDashboard() {
               label="Monitoring"
               active={active === "monitoring"}
               onClick={() => onNav("monitoring")}
+            />
+            <NavButton
+              icon={Flag}
+              label="Flagged Students"
+              active={active === "flagged"}
+              onClick={() => onNav("flagged")}
             />
             <NavButton
               icon={Settings}
@@ -916,7 +1005,7 @@ export default function MentorDashboard() {
                           </tr>
                         ) : null}
                         {filteredResults.map((r) => (
-                          <tr key={r._id}>
+                          <tr key={r._id} className={r.student?.flagged ? "men-row-flagged" : undefined}>
                             <td style={{ fontWeight: 750 }}>{r.student?.name || "—"}</td>
                             <td style={{ color: "rgba(255,255,255,0.72)" }}>{r.student?.email || "—"}</td>
                             <td style={{ color: "rgba(255,255,255,0.72)" }}>{r.exam?.title || "—"}</td>
@@ -966,32 +1055,109 @@ export default function MentorDashboard() {
                           <th>Severity</th>
                           <th>Timestamp</th>
                           <th>Description</th>
+                          <th style={{ textAlign: "right" }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {!loading && !filteredViolations.length ? (
                           <tr>
-                            <td colSpan={7} style={{ padding: 18, color: "rgba(255,255,255,0.62)" }}>
+                            <td colSpan={8} style={{ padding: 18, color: "rgba(255,255,255,0.62)" }}>
                               No monitoring alerts yet.
                             </td>
                           </tr>
                         ) : null}
-                        {filteredViolations.map((v) => (
-                          <tr key={v._id}>
-                            <td style={{ fontWeight: 750 }}>{v.student?.name || "—"}</td>
-                            <td style={{ color: "rgba(255,255,255,0.72)" }}>{v.student?.email || "—"}</td>
-                            <td style={{ color: "rgba(255,255,255,0.72)" }}>{v.exam?.title || "—"}</td>
-                            <td>{v.type || "—"}</td>
+                        {filteredViolations.map((v) => {
+                          const sid = v?.student?._id ? String(v.student._id) : "";
+                          const vCount = sid ? violationCountByStudent.get(sid) || 0 : 0;
+                          const canFlag = Boolean(sid);
+                          const already = Boolean(v?.student?.flagged);
+                          return (
+                            <tr key={v._id} className={already ? "men-row-flagged" : undefined}>
+                              <td style={{ fontWeight: 750 }}>
+                                <div>{v.student?.name || "—"}</div>
+                                {vCount > 5 ? (
+                                  <div className="men-pill yellow" style={{ marginTop: 6, fontSize: 11, width: "fit-content" }}>
+                                    Recommended for flagging
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td style={{ color: "rgba(255,255,255,0.72)" }}>{v.student?.email || "—"}</td>
+                              <td style={{ color: "rgba(255,255,255,0.72)" }}>{v.exam?.title || "—"}</td>
+                              <td>{v.type || "—"}</td>
+                              <td>
+                                <span className={`men-pill ${v.severity === "High" ? "red" : v.severity === "Low" ? "green" : "yellow"}`}>
+                                  <MonitorDot size={14} /> {v.severity || "Medium"}
+                                </span>
+                              </td>
+                              <td style={{ color: "rgba(255,255,255,0.72)" }}>
+                                {v.timestamp ? new Date(v.timestamp).toLocaleString() : "—"}
+                              </td>
+                              <td style={{ color: "rgba(255,255,255,0.72)", whiteSpace: "normal" }}>
+                                {v.description || "—"}
+                              </td>
+                              <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                                <button
+                                  type="button"
+                                  className="men-btn danger"
+                                  disabled={!canFlag || already}
+                                  title={already ? "Student is already flagged" : "Flag this student"}
+                                  onClick={() =>
+                                    openFlagStudentModal({
+                                      studentId: sid,
+                                      studentName: v.student?.name || "Student",
+                                      violationType: v.type || v.description || "Violation",
+                                    })
+                                  }
+                                >
+                                  <Flag size={16} /> Flag Student
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              </SectionShell>
+            ) : null}
+
+            {active === "flagged" ? (
+              <SectionShell key="flagged">
+                <Card title="Flagged Students" kicker="Students in your scope with an active integrity flag">
+                  <div className="men-table-wrap">
+                    <table className="men-table">
+                      <thead>
+                        <tr>
+                          <th>Student</th>
+                          <th>Severity</th>
+                          <th>Reason</th>
+                          <th>Flagged At</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {!loading && !flaggedStudents.length ? (
+                          <tr>
+                            <td colSpan={4} style={{ padding: 18, color: "rgba(255,255,255,0.62)" }}>
+                              No flagged students in your monitoring scope.
+                            </td>
+                          </tr>
+                        ) : null}
+                        {flaggedStudents.map((fs) => (
+                          <tr key={fs.id} className="men-row-flagged">
+                            <td style={{ fontWeight: 750 }}>{fs.name}</td>
                             <td>
-                              <span className={`men-pill ${v.severity === "High" ? "red" : v.severity === "Low" ? "green" : "yellow"}`}>
-                                <MonitorDot size={14} /> {v.severity || "Medium"}
+                              <span
+                                className={`men-pill ${
+                                  fs.flagSeverity === "High" ? "red" : fs.flagSeverity === "Low" ? "green" : "yellow"
+                                }`}
+                              >
+                                <AlertTriangle size={14} /> {fs.flagSeverity || "Low"}
                               </span>
                             </td>
+                            <td style={{ color: "rgba(255,255,255,0.72)", whiteSpace: "normal" }}>{fs.flagReason || "—"}</td>
                             <td style={{ color: "rgba(255,255,255,0.72)" }}>
-                              {v.timestamp ? new Date(v.timestamp).toLocaleString() : "—"}
-                            </td>
-                            <td style={{ color: "rgba(255,255,255,0.72)", whiteSpace: "normal" }}>
-                              {v.description || "—"}
+                              {fs.flaggedAt ? new Date(fs.flaggedAt).toLocaleString() : "—"}
                             </td>
                           </tr>
                         ))}
@@ -1030,6 +1196,82 @@ export default function MentorDashboard() {
               </SectionShell>
             ) : null}
           </AnimatePresence>
+
+          {flagModal ? (
+            <div
+              className="men-modal-overlay"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="mentor-flag-modal-title"
+              onClick={() => {
+                if (!flagSubmitting) closeFlagStudentModal();
+              }}
+            >
+              <div className="men-modal men-modal-flag" onClick={(e) => e.stopPropagation()}>
+                <div className="men-modal-head">
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span className="men-pill red">
+                      <AlertTriangle size={14} />
+                    </span>
+                    <h2 className="men-modal-title" id="mentor-flag-modal-title">
+                      Flag student
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    className="men-btn"
+                    disabled={flagSubmitting}
+                    onClick={closeFlagStudentModal}
+                    aria-label="Close"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="men-modal-body">
+                  <p style={{ margin: "0 0 10px", color: "rgba(255,255,255,0.72)", fontSize: 13 }}>
+                    <strong style={{ color: "var(--men-text)" }}>{flagModal.studentName}</strong>
+                    <span style={{ color: "rgba(255,255,255,0.55)" }}> · Violation: </span>
+                    {flagModal.violationType}
+                  </p>
+                  <div className="men-field">
+                    <label htmlFor="mentor-flag-severity">Severity</label>
+                    <select
+                      id="mentor-flag-severity"
+                      className="men-select"
+                      style={{ width: "100%" }}
+                      value={flagSeverity}
+                      onChange={(e) => setFlagSeverity(e.target.value)}
+                      disabled={flagSubmitting}
+                    >
+                      <option value="Low">Low</option>
+                      <option value="Medium">Medium</option>
+                      <option value="High">High</option>
+                    </select>
+                  </div>
+                  <div className="men-field">
+                    <label htmlFor="mentor-flag-reason">Reason</label>
+                    <textarea
+                      id="mentor-flag-reason"
+                      className="men-flag-textarea"
+                      rows={4}
+                      value={flagReason}
+                      onChange={(e) => setFlagReason(e.target.value)}
+                      placeholder="Describe why this student is being flagged…"
+                      disabled={flagSubmitting}
+                    />
+                  </div>
+                  <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14 }}>
+                    <button type="button" className="men-btn" disabled={flagSubmitting} onClick={closeFlagStudentModal}>
+                      Cancel
+                    </button>
+                    <button type="button" className="men-btn danger" disabled={flagSubmitting} onClick={submitFlagStudent}>
+                      {flagSubmitting ? "Saving…" : "Confirm Flag"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </main>
       </div>
     </div>

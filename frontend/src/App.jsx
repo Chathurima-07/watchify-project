@@ -14,15 +14,18 @@ import StudentResultDetails from "./pages/StudentResultDetails";
 // 🔒 Protected Route Component
 const ProtectedRoute = ({ children, role }) => {
   const token = localStorage.getItem("token");
-  const user = JSON.parse(localStorage.getItem("user"));
+  let user = null;
+  try {
+    user = JSON.parse(localStorage.getItem("user") || "null");
+  } catch {
+    user = null;
+  }
 
-  // not logged in
-  if (!token) {
+  if (!token || !user || typeof user !== "object") {
     return <Navigate to="/" />;
   }
 
-  // role mismatch
-  if (role && user?.role !== role) {
+  if (role && user.role !== role) {
     return <Navigate to="/" />;
   }
 

@@ -40,8 +40,10 @@ export default function MentorExamDetails() {
         ]);
 
         if (cancelled) return;
-        setExam(examRes.data);
-        setResults(Array.isArray(resultsRes.data) ? resultsRes.data : []);
+        const examPayload = examRes.data?.exam ?? examRes.data;
+        setExam(examPayload && typeof examPayload === "object" ? examPayload : null);
+        const resultsPayload = resultsRes.data?.results ?? resultsRes.data;
+        setResults(Array.isArray(resultsPayload) ? resultsPayload : []);
       } catch (e) {
         const msg = e?.response?.status === 401 ? "Unauthorized" : e?.response?.data?.message || e.message;
         if (e?.response?.status === 401) navigate("/");

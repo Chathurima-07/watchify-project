@@ -1,6 +1,21 @@
 import Exam from "../models/Exam.js";
 import Result from "../models/Result.js";
 import Violation from "../models/Violation.js";
+import User from "../models/User.js";
+
+async function activeMentorObjectIds() {
+  const mentors = await User.find({ role: "mentor", mentorStatus: { $ne: "disabled" } }).select("_id").lean();
+  return mentors.map((m) => m._id);
+}
+
+async function assertExamMentorActive(exam) {
+  if (!exam?.createdBy) return { ok: true };
+  const mentor = await User.findById(exam.createdBy).select("role mentorStatus").lean();
+  if (mentor?.role === "mentor" && mentor.mentorStatus === "disabled") {
+    return { ok: false, message: "This exam is no longer available." };
+  }
+  return { ok: true };
+}
 
 function sanitizeExam(examDoc) {
   const exam = examDoc?.toObject ? examDoc.toObject() : examDoc;
@@ -27,10 +42,32 @@ function calculatePercentage(score, total) {
   return Math.round((score / total) * 100);
 }
 
+export const getStudentProfile = async (req, res) => {
+  try {
+    const u = await User.findById(req.user._id)
+      .select("name email role flagged flagReason flagSeverity flaggedAt")
+      .lean();
+    if (!u) return res.status(404).json({ message: "User not found" });
+    res.json({
+      id: u._id,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      flagged: !!u.flagged,
+      flagReason: u.flagReason || "",
+      flagSeverity: u.flagSeverity || "Low",
+      flaggedAt: u.flaggedAt || null,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 export const getStudentStats = async (req, res) => {
   try {
+    const mentorIds = await activeMentorObjectIds();
     const [availableExams, attemptedResults, violations] = await Promise.all([
-      Exam.countDocuments({}),
+      mentorIds.length ? Exam.countDocuments({ createdBy: { $in: mentorIds } }) : 0,
       Result.find({ student: req.user._id }).select("score total status").lean(),
       Violation.countDocuments({ student: req.user._id }),
     ]);
@@ -56,7 +93,11 @@ export const getStudentStats = async (req, res) => {
 
 export const getStudentExams = async (req, res) => {
   try {
-    const exams = await Exam.find({})
+    const mentorIds = await activeMentorObjectIds();
+    if (!mentorIds.length) {
+      return res.json([]);
+    }
+    const exams = await Exam.find({ createdBy: { $in: mentorIds } })
       .select("title duration questions createdBy createdAt updatedAt")
       .sort({ createdAt: -1 })
       .lean();
@@ -74,6 +115,8 @@ export const getStudentExamById = async (req, res) => {
       .lean();
 
     if (!exam) return res.status(404).json({ message: "Exam not found" });
+    const gate = await assertExamMentorActive(exam);
+    if (!gate.ok) return res.status(403).json({ message: gate.message });
     res.json(sanitizeExam(exam));
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -91,6 +134,9 @@ export const submitStudentExam = async (req, res) => {
 
     const exam = await Exam.findById(examId);
     if (!exam) return res.status(404).json({ message: "Exam not found" });
+
+    const gate = await assertExamMentorActive(exam);
+    if (!gate.ok) return res.status(403).json({ message: gate.message });
 
     const existing = await Result.findOne({ student: req.user._id, exam: examId });
     if (existing && existing.status === "Completed") {
@@ -207,8 +253,11 @@ export const createStudentViolation = async (req, res) => {
       return res.status(400).json({ message: "examId and type are required" });
     }
 
-    const exam = await Exam.findById(examId).select("_id createdBy").lean();
+    const exam = await Exam.findById(examId).lean();
     if (!exam) return res.status(404).json({ message: "Exam not found" });
+
+    const gate = await assertExamMentorActive(exam);
+    if (!gate.ok) return res.status(403).json({ message: gate.message });
 
     const violation = await Violation.create({
       student: req.user._id,

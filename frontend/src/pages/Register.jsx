@@ -129,7 +129,7 @@ function Register() {
       }
 
       setError(data?.message || "Registration failed. Please try again.");
-    } catch (err) {
+    } catch {
       setError("Unable to register. Please make sure the server is running.");
     } finally {
       setLoading(false);

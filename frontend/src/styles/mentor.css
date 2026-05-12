@@ -350,6 +350,17 @@ body,
   filter: brightness(1.05);
 }
 
+.men-btn.danger {
+  border-color: rgba(251, 113, 133, 0.35);
+  background: rgba(251, 113, 133, 0.12);
+  color: #fecdd3;
+}
+
+.men-btn.danger:hover {
+  filter: brightness(1.06);
+  border-color: rgba(251, 113, 133, 0.45);
+}
+
 .men-table-wrap {
   overflow-x: hidden;
   overflow-y: auto;
@@ -416,6 +427,82 @@ body,
   font-weight: 700;
   color: rgba(255, 255, 255, 0.78);
   margin-bottom: 6px;
+}
+
+.men-row-flagged td {
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.men-row-flagged {
+  box-shadow: inset 3px 0 0 rgba(248, 113, 113, 0.85);
+}
+
+.men-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  z-index: 80;
+}
+
+.men-modal {
+  width: min(920px, 100%);
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: linear-gradient(180deg, rgba(5, 11, 24, 0.86), rgba(7, 13, 30, 0.8));
+  box-shadow: 0 50px 130px rgba(0, 0, 0, 0.65);
+  overflow: hidden;
+}
+
+.men-modal-flag {
+  width: min(480px, 100%);
+  border-color: rgba(248, 113, 113, 0.35);
+  box-shadow:
+    0 50px 130px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(248, 113, 113, 0.12),
+    0 0 40px rgba(239, 68, 68, 0.15);
+}
+
+.men-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.men-modal-title {
+  margin: 0;
+  font-weight: 860;
+  font-size: 14px;
+}
+
+.men-modal-body {
+  padding: 14px 14px 16px;
+}
+
+.men-flag-textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--men-text);
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+  min-height: 96px;
+}
+
+.men-flag-textarea:focus {
+  outline: none;
+  border-color: rgba(47, 109, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(47, 109, 255, 0.18);
 }
 
 @media (max-width: 1100px) {

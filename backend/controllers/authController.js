@@ -49,6 +49,10 @@ export const loginUser = async (req, res) => {
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
+    if (user.role === "mentor" && user.mentorStatus === "disabled") {
+      return res.status(403).json({ message: "This mentor account has been disabled." });
+    }
+
     // send response with token
     res.json({
       message: "Login successful",
@@ -58,6 +62,10 @@ export const loginUser = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        flagged: !!user.flagged,
+        flagReason: user.flagReason || "",
+        flagSeverity: user.flagSeverity || "Low",
+        flaggedAt: user.flaggedAt || null,
       },
     });
 
