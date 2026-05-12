@@ -1,6 +1,8 @@
 import User from "../models/User.js";
 import Exam from "../models/Exam.js";
 import Result from "../models/Result.js";
+import ReportExport from "../models/ReportExport.js";
+import Violation from "../models/Violation.js";
 
 function riskFromViolations(totalViolations = 0) {
   if (totalViolations <= 0) return "Low Risk";
@@ -161,7 +163,8 @@ export const getAdminStats = async (req, res) => {
 export const getAdminStudents = async (req, res) => {
   try {
     const students = await User.find({ role: "student" })
-      .select("name email createdAt")
+      .select("name email createdAt flagged flagReason flagSeverity flaggedAt flaggedBy")
+      .populate("flaggedBy", "name email role")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -200,6 +203,11 @@ export const getAdminStudents = async (req, res) => {
         latestScore,
         risk,
         status: statusFromRisk(risk),
+        accountFlagged: !!s.flagged,
+        flagReason: s.flagReason || "",
+        flagSeverity: s.flagSeverity || "Low",
+        flaggedAt: s.flaggedAt || null,
+        flaggedByName: s.flaggedBy?.name || "",
       };
     });
 
@@ -212,7 +220,7 @@ export const getAdminStudents = async (req, res) => {
 export const getAdminMentors = async (req, res) => {
   try {
     const mentors = await User.find({ role: "mentor" })
-      .select("name email createdAt")
+      .select("name email createdAt mentorStatus")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -253,7 +261,7 @@ export const getAdminMentors = async (req, res) => {
         email: safeName(m.email),
         examsCreated,
         studentsMonitored,
-        status: "Active",
+        status: m.mentorStatus === "disabled" ? "Disabled" : "Active",
       };
     });
 
@@ -368,7 +376,7 @@ export const getAdminStudentDetails = async (req, res) => {
 export const getAdminMentorDetails = async (req, res) => {
   try {
     const { id } = req.params;
-    const mentor = await User.findOne({ _id: id, role: "mentor" }).select("name email").lean();
+    const mentor = await User.findOne({ _id: id, role: "mentor" }).select("name email mentorStatus").lean();
     if (!mentor) return res.status(404).json({ message: "Mentor not found" });
 
     const exams = await Exam.find({ createdBy: id }).select("_id title").lean();
@@ -465,7 +473,7 @@ export const getAdminMentorDetails = async (req, res) => {
         name: safeName(mentor.name),
         email: safeName(mentor.email),
         department: "—",
-        status: "Active",
+        status: mentor.mentorStatus === "disabled" ? "Disabled" : "Active",
         experience: "Mentor",
         examsCreated: exams.length,
         studentsMonitored: studentsSet.size,
@@ -537,38 +545,143 @@ export const getAdminFeedback = async (req, res) => {
   }
 };
 
-export const getAdminReports = async (req, res) => {
-  try {
-    const [studentsCount, mentorsCount, examsCount, latestResults] = await Promise.all([
+function formatExportSize(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function buildReportPayload(type) {
+  const generatedAt = new Date().toISOString();
+  if (type === "student") {
+    const [totalStudents, results] = await Promise.all([
       User.countDocuments({ role: "student" }),
+      Result.find({}).select("student score total status violations createdAt").lean().limit(5000),
+    ]);
+    const students = await User.find({ role: "student" }).select("name email createdAt").sort({ createdAt: -1 }).lean().limit(80);
+    return { generatedAt, type, summary: { totalStudents, totalResults: results.length }, studentsSample: students };
+  }
+  if (type === "mentor") {
+    const [totalMentors, totalExams, totalViolations, mentors] = await Promise.all([
       User.countDocuments({ role: "mentor" }),
       Exam.countDocuments({}),
-      Result.find({}).sort({ createdAt: -1 }).limit(3).select("createdAt").lean(),
+      Violation.countDocuments({}),
+      User.find({ role: "mentor" }).select("name email mentorStatus createdAt").sort({ createdAt: -1 }).lean().limit(80),
     ]);
+    return { generatedAt, type, summary: { totalMentors, totalExams, totalViolations }, mentorsSample: mentors };
+  }
+  const [students, mentors, exams, results, violations] = await Promise.all([
+    User.countDocuments({ role: "student" }),
+    User.countDocuments({ role: "mentor" }),
+    Exam.countDocuments({}),
+    Result.countDocuments({}),
+    Violation.countDocuments({}),
+  ]);
+  return { generatedAt, type, summary: { students, mentors, exams, results, violations } };
+}
 
-    const latestDate = latestResults[0]?.createdAt || new Date();
-    const recentExports = [
-      {
-        report: "Student Performance Snapshot",
-        date: new Date(latestDate).toLocaleDateString(),
-        range: "Last 30 days",
-        size: `${Math.max(1, Math.round(studentsCount / 50))}.${Math.max(1, (studentsCount % 9) + 1)} MB`,
-      },
-      {
-        report: "Mentor Activity Snapshot",
-        date: new Date(latestDate).toLocaleDateString(),
-        range: "Last 30 days",
-        size: `${Math.max(1, Math.round(mentorsCount / 10))}.${Math.max(1, (mentorsCount % 9) + 1)} MB`,
-      },
-      {
-        report: "System Analytics Snapshot",
-        date: new Date(latestDate).toLocaleDateString(),
-        range: "Last 30 days",
-        size: `${Math.max(1, Math.round(examsCount / 40))}.${Math.max(1, (examsCount % 9) + 1)} MB`,
-      },
-    ];
-
+export const getAdminReports = async (req, res) => {
+  try {
+    const rows = await ReportExport.find({})
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
+    const recentExports = rows.map((r) => ({
+      id: String(r._id),
+      report: r.label,
+      date: new Date(r.createdAt).toLocaleString(),
+      range: r.rangeSummary,
+      size: formatExportSize(r.sizeBytes),
+      exportType: r.type,
+    }));
     res.json({ ok: true, recentExports });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const createAdminReportExport = async (req, res) => {
+  try {
+    const { type, dateRange, reportRole, reportRisk } = req.body || {};
+    if (!["student", "mentor", "system"].includes(type)) {
+      return res.status(400).json({ message: "type must be student, mentor, or system" });
+    }
+    const payload = await buildReportPayload(type);
+    const raw = JSON.stringify(payload);
+    const sizeBytes = Buffer.byteLength(raw, "utf8");
+    const labels = {
+      student: "Student Performance Report",
+      mentor: "Mentor Activity Report",
+      system: "System Analytics Report",
+    };
+    const rangeSummary = [dateRange, reportRole, reportRisk].filter(Boolean).join(" · ") || "Snapshot";
+    const doc = await ReportExport.create({
+      createdBy: req.user._id,
+      type,
+      label: labels[type],
+      rangeSummary,
+      sizeBytes,
+      payload,
+    });
+    res.status(201).json({ ok: true, exportId: doc._id });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const downloadAdminReport = async (req, res) => {
+  try {
+    const doc = await ReportExport.findById(req.params.id).lean();
+    if (!doc) return res.status(404).json({ message: "Export not found" });
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="watchify-${doc.type}-${doc._id}.json"`);
+    res.send(JSON.stringify(doc.payload, null, 2));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const patchAdminMentorStatus = async (req, res) => {
+  try {
+    const { mentorStatus } = req.body || {};
+    if (!["active", "disabled"].includes(mentorStatus)) {
+      return res.status(400).json({ message: "mentorStatus must be active or disabled" });
+    }
+    const mentor = await User.findOne({ _id: req.params.id, role: "mentor" });
+    if (!mentor) return res.status(404).json({ message: "Mentor not found" });
+    mentor.mentorStatus = mentorStatus;
+    await mentor.save();
+    res.json({ ok: true, mentorStatus: mentor.mentorStatus });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const getAdminViolations = async (req, res) => {
+  try {
+    const items = await Violation.find({})
+      .populate("student", "name email flagged")
+      .populate("exam", "title")
+      .populate("mentor", "name email")
+      .sort({ timestamp: -1 })
+      .limit(500)
+      .lean();
+
+    const rows = items.map((v) => ({
+      _id: v._id,
+      student: v.student
+        ? { _id: v.student._id, name: v.student.name, email: v.student.email, flagged: !!v.student.flagged }
+        : null,
+      exam: v.exam ? { _id: v.exam._id, title: v.exam.title } : null,
+      mentor: v.mentor ? { _id: v.mentor._id, name: v.mentor.name, email: v.mentor.email } : null,
+      type: v.type,
+      severity: v.severity,
+      description: v.description,
+      timestamp: v.timestamp,
+    }));
+
+    res.json({ ok: true, violations: rows });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

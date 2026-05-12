@@ -160,7 +160,7 @@ export const getMentorResults = async (req, res) => {
     if (!examIds.length) return res.json({ ok: true, results: [] });
 
     const results = await Result.find({ exam: { $in: examIds } })
-      .populate("student", "name email")
+      .populate("student", "name email flagged flagReason flagSeverity")
       .populate("exam", "title")
       .sort({ createdAt: -1 })
       .lean();
@@ -216,7 +216,7 @@ export const getMentorViolations = async (req, res) => {
   try {
     const { examId = "", severity = "all", from = "", to = "" } = req.query || {};
     const items = await Violation.find({ mentor: req.user._id })
-      .populate("student", "name email")
+      .populate("student", "name email flagged flagReason flagSeverity")
       .populate("exam", "title")
       .sort({ timestamp: -1 })
       .limit(500)

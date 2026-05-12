@@ -409,6 +409,12 @@ body,
   filter: brightness(1.05);
 }
 
+.btn.danger {
+  border-color: rgba(251, 113, 133, 0.35);
+  background: rgba(251, 113, 133, 0.12);
+  color: #fecdd3;
+}
+
 .btn.danger:hover {
   border-color: rgba(251, 113, 133, 0.28);
 }
@@ -620,6 +626,50 @@ body,
 
 .modal-body {
   padding: 14px 14px 16px;
+}
+
+.modal-flag {
+  width: min(480px, 100%);
+  border-color: rgba(248, 113, 113, 0.35);
+  box-shadow:
+    0 50px 130px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(248, 113, 113, 0.12),
+    0 0 40px rgba(239, 68, 68, 0.15);
+}
+
+.admin-row-flagged td {
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.admin-row-flagged {
+  box-shadow: inset 3px 0 0 rgba(248, 113, 113, 0.85);
+}
+
+.admin-flag-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.admin-flag-textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--adm-text);
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+  min-height: 96px;
+}
+
+.admin-flag-textarea:focus {
+  outline: none;
+  border-color: rgba(47, 109, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(47, 109, 255, 0.18);
 }
 
 .video-placeholder {

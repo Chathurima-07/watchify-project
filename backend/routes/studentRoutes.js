@@ -5,6 +5,7 @@ import {
   createStudentViolation,
   getStudentExamById,
   getStudentExams,
+  getStudentProfile,
   getStudentResultById,
   getStudentResults,
   getStudentStats,
@@ -14,6 +15,7 @@ import {
 
 const router = express.Router();
 
+router.get("/profile", protect, authorizeRoles("student"), getStudentProfile);
 router.get("/stats", protect, authorizeRoles("student"), getStudentStats);
 router.get("/exams", protect, authorizeRoles("student"), getStudentExams);
 router.get("/exams/:id", protect, authorizeRoles("student"), getStudentExamById);

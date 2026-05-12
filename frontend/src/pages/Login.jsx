@@ -115,7 +115,7 @@ function Login() {
       }
 
       setError(data?.message || "Login failed. Please check your credentials.");
-    } catch (err) {
+    } catch {
       setError("Unable to login. Please make sure the server is running.");
     } finally {
       setLoading(false);

@@ -3,6 +3,7 @@ import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import {
   Activity,
+  AlertTriangle,
   BadgeCheck,
   BookOpen,
   Eye,
@@ -52,6 +53,7 @@ function StudentDashboard() {
   const [exams, setExams] = useState([]);
   const [results, setResults] = useState([]);
   const [violations, setViolations] = useState([]);
+  const [flagProfile, setFlagProfile] = useState(null);
 
   const user = useMemo(() => {
     try {
@@ -81,8 +83,38 @@ function StudentDashboard() {
       setExams(Array.isArray(examsRes.data) ? examsRes.data : []);
       setResults(Array.isArray(resultsRes.data) ? resultsRes.data : []);
       setViolations(Array.isArray(violationsRes.data) ? violationsRes.data : []);
+
+      try {
+        const profileRes = await axios.get(`${API_BASE}/api/student/profile`, { headers: authHeaders() });
+        const prof = profileRes.data;
+        setFlagProfile(prof && typeof prof === "object" ? prof : null);
+        if (prof && typeof prof === "object") {
+          try {
+            const raw = localStorage.getItem("user");
+            if (raw) {
+              const u = JSON.parse(raw);
+              if (u && typeof u === "object") {
+                const next = {
+                  ...u,
+                  flagged: !!prof.flagged,
+                  flagReason: prof.flagReason || "",
+                  flagSeverity: prof.flagSeverity || "Low",
+                  flaggedAt: prof.flaggedAt || null,
+                };
+                localStorage.setItem("user", JSON.stringify(next));
+              }
+            }
+          } catch {
+            /* ignore localStorage */
+          }
+        }
+      } catch {
+        setFlagProfile(null);
+      }
     } catch (e) {
-      if (e?.response?.status === 401) {
+      if (e?.response?.status === 401 || e?.response?.status === 403) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
         navigate("/");
         return;
       }
@@ -179,6 +211,32 @@ function StudentDashboard() {
                 <span className="student-pill red">
                   <Shield size={14} /> {error}
                 </span>
+              </div>
+            </div>
+          ) : null}
+
+          {flagProfile?.flagged ? (
+            <div className="student-flag-banner" role="alert">
+              <div className="student-flag-banner-icon" aria-hidden="true">
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <div className="student-flag-banner-title">
+                  Your account has been flagged for suspicious exam behavior.
+                </div>
+                <div className="student-flag-banner-meta">
+                  <span className="student-pill red">
+                    Severity: {flagProfile.flagSeverity || "Low"}
+                  </span>
+                  {flagProfile.flaggedAt ? (
+                    <span className="student-pill gray">
+                      Flagged: {new Date(flagProfile.flaggedAt).toLocaleString()}
+                    </span>
+                  ) : null}
+                </div>
+                {flagProfile.flagReason ? (
+                  <p className="student-flag-banner-reason">{flagProfile.flagReason}</p>
+                ) : null}
               </div>
             </div>
           ) : null}

@@ -7,6 +7,17 @@ import "../styles/student.css";
 
 const API_BASE = "http://localhost:5000";
 
+function examDraftStorageKey(examId) {
+  let uid = "";
+  try {
+    const u = JSON.parse(localStorage.getItem("user") || "null");
+    uid = u?.id != null ? String(u.id) : "";
+  } catch {
+    uid = "";
+  }
+  return `watchify_exam_answers::${uid}::${examId}`;
+}
+
 function authHeaders() {
   const token = localStorage.getItem("token");
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -58,10 +69,20 @@ function ExamPage() {
         await document.exitFullscreen();
       }
 
+      try {
+        localStorage.removeItem(examDraftStorageKey(id));
+      } catch {
+        /* ignore */
+      }
       navigate(`/student/result/${res.data.resultId}`);
     } catch (err) {
       if (err?.response?.status === 401) {
         navigate("/");
+        return;
+      }
+      if (err?.response?.status === 403) {
+        alert(err?.response?.data?.message || "This exam is no longer available.");
+        setSubmitting(false);
         return;
       }
       alert(err?.response?.data?.message || "Failed to submit exam.");
@@ -84,7 +105,19 @@ function ExamPage() {
         });
         setExam(res.data);
         const qLen = Array.isArray(res.data?.questions) ? res.data.questions.length : 0;
-        setAnswers(new Array(qLen).fill(""));
+        let initialAnswers = new Array(qLen).fill("");
+        try {
+          const raw = localStorage.getItem(examDraftStorageKey(id));
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed?.answers) && parsed.answers.length === qLen) {
+              initialAnswers = parsed.answers.map((a) => (typeof a === "string" ? a : ""));
+            }
+          }
+        } catch {
+          /* ignore corrupt draft */
+        }
+        setAnswers(initialAnswers);
         setTimeLeft((res.data?.duration || 0) * 60);
       } catch (err) {
         if (err?.response?.status === 401) {
@@ -180,13 +213,28 @@ function ExamPage() {
     checkCamera();
   }, [isStarted, logViolation]);
 
+  useEffect(() => {
+    if (!isStarted || !exam || submitting) return;
+    const handle = window.setTimeout(() => {
+      try {
+        localStorage.setItem(
+          examDraftStorageKey(id),
+          JSON.stringify({ answers, updatedAt: Date.now() })
+        );
+      } catch {
+        /* storage full / private mode */
+      }
+    }, 450);
+    return () => window.clearTimeout(handle);
+  }, [answers, exam, id, isStarted, submitting]);
+
   const handleStartExam = async () => {
     try {
       if (document.documentElement.requestFullscreen) {
         await document.documentElement.requestFullscreen();
       }
       setIsStarted(true);
-    } catch (err) {
+    } catch {
       alert("Fullscreen is required to begin exam.");
     }
   };
@@ -222,6 +270,9 @@ function ExamPage() {
             </div>
             <p style={{ color: "rgba(255,255,255,0.72)" }}>
               Do not switch tabs, exit fullscreen, or use copy/paste. Violations are logged.
+            </p>
+            <p style={{ color: "rgba(255,255,255,0.55)", fontSize: 13, marginTop: 14, maxWidth: 520, marginLeft: "auto", marginRight: "auto" }}>
+              Answers autosave while the exam is running. If you return before submitting, your latest selections can be prefilled.
             </p>
             <button className="student-btn primary" onClick={handleStartExam}>
               <Shield size={16} /> Start Exam

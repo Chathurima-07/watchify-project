@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Activity,
+  AlertTriangle,
   BadgeCheck,
   BarChart3,
   Bell,
@@ -14,6 +15,7 @@ import {
   LogOut,
   Menu,
   MessageSquareText,
+  MonitorDot,
   Settings,
   Shield,
   Users,
@@ -141,8 +143,104 @@ async function apiGet(path, signal) {
     signal,
   });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    window.location.href = "/";
+    throw new Error("Session expired.");
+  }
   if (!res.ok) throw new Error(data?.message || `Request failed: ${res.status}`);
   return data;
+}
+
+async function apiPost(path, body) {
+  const token = localStorage.getItem("token");
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body ?? {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    window.location.href = "/";
+    throw new Error("Session expired.");
+  }
+  if (!res.ok) throw new Error(data?.message || `Request failed: ${res.status}`);
+  return data;
+}
+
+async function apiPatch(path, body) {
+  const token = localStorage.getItem("token");
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body ?? {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    window.location.href = "/";
+    throw new Error("Session expired.");
+  }
+  if (!res.ok) throw new Error(data?.message || `Request failed: ${res.status}`);
+  return data;
+}
+
+async function apiPut(path, body) {
+  const token = localStorage.getItem("token");
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body ?? {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    window.location.href = "/";
+    throw new Error("Session expired.");
+  }
+  if (!res.ok) throw new Error(data?.message || `Request failed: ${res.status}`);
+  return data;
+}
+
+async function downloadReportFile(exportId) {
+  const token = localStorage.getItem("token");
+  const res = await fetch(`${API_BASE}/api/admin/reports/download/${encodeURIComponent(exportId)}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (res.status === 401) {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    window.location.href = "/";
+    return;
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    alert(data?.message || "Download failed.");
+    return;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `watchify-export-${exportId}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 function emptyArray(v) {
@@ -169,6 +267,14 @@ function AdminDashboard() {
   const [reportDateRange, setReportDateRange] = useState("last30");
   const [reportRole, setReportRole] = useState("all");
   const [reportRisk, setReportRisk] = useState("any");
+  const [exportBusy, setExportBusy] = useState(false);
+  const [flaggedStudents, setFlaggedStudents] = useState([]);
+  const [adminViolations, setAdminViolations] = useState([]);
+  const [adminVioLoading, setAdminVioLoading] = useState(false);
+  const [flagModal, setFlagModal] = useState(null);
+  const [flagReason, setFlagReason] = useState("");
+  const [flagSeverity, setFlagSeverity] = useState("High");
+  const [flagSubmitting, setFlagSubmitting] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -178,17 +284,19 @@ function AdminDashboard() {
       setLoading(true);
       setError("");
       try {
-        const [stats, stu, men, feedback, reports] = await Promise.all([
+        const [stats, stu, men, feedback, reports, flags] = await Promise.all([
           apiGet("/api/admin/stats", signal).catch(() => null),
           apiGet("/api/admin/students", signal).catch(() => []),
           apiGet("/api/admin/mentors", signal).catch(() => []),
           apiGet("/api/admin/feedback", signal).catch(() => null),
           apiGet("/api/admin/reports", signal).catch(() => null),
+          apiGet("/api/flags", signal).catch(() => null),
         ]);
 
         setStatsData(stats);
         setStudents(emptyArray(stu?.students ?? stu));
         setMentors(emptyArray(men?.mentors ?? men));
+        setFlaggedStudents(emptyArray(flags?.students));
 
         setMentorToStudent(emptyArray(feedback?.mentorToStudent));
         setStudentToMentor(emptyArray(feedback?.studentToMentor));
@@ -218,6 +326,34 @@ function AdminDashboard() {
 
     return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    if (active !== "monitoring") return;
+    const controller = new AbortController();
+    const signal = controller.signal;
+    (async () => {
+      setAdminVioLoading(true);
+      try {
+        const data = await apiGet("/api/admin/violations", signal);
+        setAdminViolations(emptyArray(data?.violations));
+      } catch {
+        setAdminViolations([]);
+      } finally {
+        setAdminVioLoading(false);
+      }
+    })();
+    return () => controller.abort();
+  }, [active]);
+
+  const violationCountByStudent = useMemo(() => {
+    const m = new Map();
+    for (const v of adminViolations) {
+      const sid = v?.student?._id ? String(v.student._id) : "";
+      if (!sid) continue;
+      m.set(sid, (m.get(sid) || 0) + 1);
+    }
+    return m;
+  }, [adminViolations]);
 
   const stats = useMemo(() => {
     const v = statsData || {};
@@ -273,16 +409,110 @@ function AdminDashboard() {
     navigate("/");
   };
 
+  const runReportExport = async (type) => {
+    setExportBusy(true);
+    try {
+      await apiPost("/api/admin/reports/export", {
+        type,
+        dateRange: reportDateRange,
+        reportRole,
+        reportRisk,
+      });
+      const reports = await apiGet("/api/admin/reports");
+      setRecentExports(emptyArray(reports?.recentExports));
+    } catch (e) {
+      alert(e?.message || "Export failed.");
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
+  const setMentorAccountStatus = async (row) => {
+    const next = row.status === "Disabled" ? "active" : "disabled";
+    const verb = next === "disabled" ? "disable" : "re-enable";
+    if (!window.confirm(`Are you sure you want to ${verb} ${row.name || "this mentor"}?`)) return;
+    try {
+      await apiPatch(`/api/admin/mentors/${encodeURIComponent(row.id)}/status`, { mentorStatus: next });
+      const men = await apiGet("/api/admin/mentors");
+      setMentors(emptyArray(men?.mentors ?? men));
+    } catch (e) {
+      alert(e?.message || "Could not update mentor status.");
+    }
+  };
+
+  const reloadFlagsAndStudents = async () => {
+    try {
+      const [flags, stu] = await Promise.all([apiGet("/api/flags"), apiGet("/api/admin/students")]);
+      setFlaggedStudents(emptyArray(flags?.students));
+      setStudents(emptyArray(stu?.students ?? stu));
+    } catch (e) {
+      alert(e?.message || "Failed to refresh flags.");
+    }
+  };
+
+  const openFlagStudentModal = ({ studentId, studentName, violationType }) => {
+    setFlagSubmitting(false);
+    setFlagModal({ studentId, studentName, violationType: violationType || "—" });
+    setFlagReason("");
+    setFlagSeverity("High");
+  };
+
+  const closeFlagStudentModal = () => {
+    setFlagModal(null);
+    setFlagReason("");
+    setFlagSubmitting(false);
+  };
+
+  const submitFlagStudent = async () => {
+    if (!flagModal?.studentId) return;
+    const reason = flagReason.trim();
+    if (!reason) {
+      alert("Please enter a reason.");
+      return;
+    }
+    setFlagSubmitting(true);
+    try {
+      await apiPost(`/api/flags/${encodeURIComponent(flagModal.studentId)}`, {
+        reason,
+        severity: flagSeverity,
+      });
+      closeFlagStudentModal();
+      await reloadFlagsAndStudents();
+      if (active === "monitoring") {
+        const data = await apiGet("/api/admin/violations");
+        setAdminViolations(emptyArray(data?.violations));
+      }
+    } catch (e) {
+      alert(e?.message || "Failed to flag student.");
+    } finally {
+      setFlagSubmitting(false);
+    }
+  };
+
+  const removeStudentFlag = async (studentId) => {
+    if (!window.confirm("Remove flag from this student?")) return;
+    try {
+      await apiPut(`/api/flags/${encodeURIComponent(studentId)}/remove`, {});
+      await reloadFlagsAndStudents();
+      if (active === "monitoring") {
+        const data = await apiGet("/api/admin/violations");
+        setAdminViolations(emptyArray(data?.violations));
+      }
+    } catch (e) {
+      alert(e?.message || "Failed to remove flag.");
+    }
+  };
+
   const filteredExports = useMemo(() => {
     let rows = [...recentExports];
-    if (reportRole !== "all") {
-      rows = rows.filter((r) => String(r.report || "").toLowerCase().includes(reportRole));
-    }
+    if (reportRole === "student") rows = rows.filter((r) => r.exportType === "student");
+    else if (reportRole === "mentor") rows = rows.filter((r) => r.exportType === "mentor");
+    else if (reportRole === "admin") rows = rows.filter((r) => r.exportType === "system");
     if (reportDateRange !== "last30") {
-      rows = rows.filter((r) => String(r.range || "").toLowerCase().includes(reportDateRange.toLowerCase()));
+      rows = rows.filter((r) => String(r.range || "").toLowerCase().includes(String(reportDateRange).toLowerCase()));
     }
     if (reportRisk !== "any") {
-      rows = rows.filter((r) => String(r.report || "").toLowerCase().includes(reportRisk));
+      rows = rows.filter((r) => String(r.range || "").toLowerCase().includes(String(reportRisk).toLowerCase()));
     }
     return rows;
   }, [recentExports, reportDateRange, reportRole, reportRisk]);
@@ -294,6 +524,10 @@ function AdminDashboard() {
       ? "Students"
       : active === "mentors"
       ? "Mentors"
+      : active === "monitoring"
+      ? "Monitoring Logs"
+      : active === "flagged"
+      ? "Flagged Students"
       : active === "feedback"
       ? "Feedback"
       : active === "reports"
@@ -307,6 +541,10 @@ function AdminDashboard() {
       ? "Risk monitoring, performance insights, and account status"
       : active === "mentors"
       ? "Mentor performance, monitoring activity, and administration"
+      : active === "monitoring"
+      ? "Review violations and flag students for follow-up"
+      : active === "flagged"
+      ? "Students marked for suspicious exam behavior"
       : active === "feedback"
       ? "Platform feedback from mentors and students"
       : active === "reports"
@@ -365,6 +603,18 @@ function AdminDashboard() {
               label="Mentors"
               active={active === "mentors"}
               onClick={() => onNav("mentors")}
+            />
+            <NavButton
+              icon={MonitorDot}
+              label="Monitoring"
+              active={active === "monitoring"}
+              onClick={() => onNav("monitoring")}
+            />
+            <NavButton
+              icon={Flag}
+              label="Flagged Students"
+              active={active === "flagged"}
+              onClick={() => onNav("flagged")}
             />
             <NavButton
               icon={MessageSquareText}
@@ -593,7 +843,7 @@ function AdminDashboard() {
                           </tr>
                         ) : null}
                         {students.map((s) => (
-                          <tr key={s.id}>
+                          <tr key={s.id} className={s.accountFlagged ? "admin-row-flagged" : undefined}>
                             <td style={{ fontWeight: 750 }}>{s.name}</td>
                             <td style={{ color: "rgba(255,255,255,0.72)" }}>{s.email}</td>
                             <td>{s.examsAttempted ?? "—"}</td>
@@ -613,12 +863,25 @@ function AdminDashboard() {
                               </StatusBadge>
                             </td>
                             <td>
-                              <StatusBadge
-                                variant={s.status === "Active" ? "green" : s.status ? "red" : "gray"}
-                                icon={s.status === "Active" ? BadgeCheck : Flag}
-                              >
-                                {s.status || "—"}
-                              </StatusBadge>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                                {s.accountFlagged ? (
+                                  <span
+                                    className="pill red"
+                                    title={[s.flagSeverity, s.flagReason, s.flaggedAt ? new Date(s.flaggedAt).toLocaleString() : ""]
+                                      .filter(Boolean)
+                                      .join(" · ")}
+                                    style={{ cursor: "help" }}
+                                  >
+                                    <AlertTriangle size={14} /> FLAGGED
+                                  </span>
+                                ) : null}
+                                <StatusBadge
+                                  variant={s.status === "Active" ? "green" : s.status ? "red" : "gray"}
+                                  icon={s.status === "Active" ? BadgeCheck : Flag}
+                                >
+                                  {s.status || "—"}
+                                </StatusBadge>
+                              </div>
                             </td>
                             <td style={{ textAlign: "right" }}>
                               <button
@@ -687,11 +950,166 @@ function AdminDashboard() {
                               </button>
                               <button
                                 className="btn danger"
-                                disabled
-                                title="Mentor status control will be wired to a dedicated admin action endpoint."
+                                type="button"
+                                onClick={() => setMentorAccountStatus(m)}
                               >
                                 <Settings size={16} />
-                                Status Control
+                                {m.status === "Disabled" ? "Enable" : "Disable"}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              </SectionShell>
+            ) : null}
+
+            {active === "monitoring" ? (
+              <SectionShell key="monitoring">
+                <Card title="Platform Violation Logs" kicker="Review incidents across all exams and flag students">
+                  <div className="admin-table-wrap">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Time</th>
+                          <th>Student</th>
+                          <th>Exam</th>
+                          <th>Mentor</th>
+                          <th>Type</th>
+                          <th>Severity</th>
+                          <th>Description</th>
+                          <th style={{ textAlign: "right" }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {adminVioLoading ? (
+                          <tr>
+                            <td colSpan={8} style={{ padding: 18, color: "rgba(255,255,255,0.62)" }}>
+                              Loading violations…
+                            </td>
+                          </tr>
+                        ) : null}
+                        {!adminVioLoading && !adminViolations.length ? (
+                          <tr>
+                            <td colSpan={8} style={{ padding: 18, color: "rgba(255,255,255,0.62)" }}>
+                              No violation logs yet.
+                            </td>
+                          </tr>
+                        ) : null}
+                        {!adminVioLoading
+                          ? adminViolations.map((v) => {
+                              const sid = v?.student?._id ? String(v.student._id) : "";
+                              const vCount = sid ? violationCountByStudent.get(sid) || 0 : 0;
+                              const canFlag = Boolean(sid);
+                              const already = Boolean(v?.student?.flagged);
+                              return (
+                                <tr key={v._id} className={already ? "admin-row-flagged" : undefined}>
+                                  <td style={{ color: "rgba(255,255,255,0.72)", whiteSpace: "nowrap" }}>
+                                    {v.timestamp ? new Date(v.timestamp).toLocaleString() : "—"}
+                                  </td>
+                                  <td style={{ fontWeight: 750 }}>
+                                    <div>{v.student?.name || "—"}</div>
+                                    {vCount > 5 ? (
+                                      <div className="pill yellow" style={{ marginTop: 6, fontSize: 11, width: "fit-content" }}>
+                                        Recommended for flagging
+                                      </div>
+                                    ) : null}
+                                  </td>
+                                  <td style={{ color: "rgba(255,255,255,0.72)" }}>{v.exam?.title || "—"}</td>
+                                  <td style={{ color: "rgba(255,255,255,0.72)" }}>{v.mentor?.name || "—"}</td>
+                                  <td>{v.type || "—"}</td>
+                                  <td>
+                                    <StatusBadge
+                                      variant={
+                                        v.severity === "High" ? "red" : v.severity === "Low" ? "green" : "yellow"
+                                      }
+                                      icon={MonitorDot}
+                                    >
+                                      {v.severity || "Medium"}
+                                    </StatusBadge>
+                                  </td>
+                                  <td style={{ color: "rgba(255,255,255,0.72)", whiteSpace: "normal", maxWidth: 280 }}>
+                                    {v.description || "—"}
+                                  </td>
+                                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                                    <button
+                                      type="button"
+                                      className="btn danger"
+                                      disabled={!canFlag || already}
+                                      title={already ? "Student is already flagged" : "Flag this student"}
+                                      onClick={() =>
+                                        openFlagStudentModal({
+                                          studentId: sid,
+                                          studentName: v.student?.name || "Student",
+                                          violationType: v.type || v.description || "Violation",
+                                        })
+                                      }
+                                    >
+                                      <Flag size={16} /> Flag Student
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          : null}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              </SectionShell>
+            ) : null}
+
+            {active === "flagged" ? (
+              <SectionShell key="flagged">
+                <Card title="Flagged Students" kicker="Accounts marked for suspicious exam behavior">
+                  <div className="admin-table-wrap">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Student</th>
+                          <th>Email</th>
+                          <th>Severity</th>
+                          <th>Reason</th>
+                          <th>Flagged At</th>
+                          <th>Flagged By</th>
+                          <th style={{ textAlign: "right" }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {!loading && !flaggedStudents.length ? (
+                          <tr>
+                            <td colSpan={7} style={{ padding: 18, color: "rgba(255,255,255,0.62)" }}>
+                              No flagged students.
+                            </td>
+                          </tr>
+                        ) : null}
+                        {flaggedStudents.map((fs) => (
+                          <tr key={fs.id} className="admin-row-flagged">
+                            <td style={{ fontWeight: 750 }}>{fs.name}</td>
+                            <td style={{ color: "rgba(255,255,255,0.72)" }}>{fs.email}</td>
+                            <td>
+                              <StatusBadge
+                                variant={
+                                  fs.flagSeverity === "High" ? "red" : fs.flagSeverity === "Low" ? "green" : "yellow"
+                                }
+                                icon={AlertTriangle}
+                              >
+                                {fs.flagSeverity || "Low"}
+                              </StatusBadge>
+                            </td>
+                            <td style={{ color: "rgba(255,255,255,0.72)", maxWidth: 320 }}>{fs.flagReason || "—"}</td>
+                            <td style={{ color: "rgba(255,255,255,0.72)" }}>
+                              {fs.flaggedAt ? new Date(fs.flaggedAt).toLocaleString() : "—"}
+                            </td>
+                            <td style={{ color: "rgba(255,255,255,0.72)" }}>
+                              {fs.flaggedBy?.name || "—"}
+                              {fs.flaggedBy?.role ? ` (${fs.flaggedBy.role})` : ""}
+                            </td>
+                            <td style={{ textAlign: "right" }}>
+                              <button type="button" className="btn danger" onClick={() => removeStudentFlag(fs.id)}>
+                                Remove Flag
                               </button>
                             </td>
                           </tr>
@@ -837,9 +1255,14 @@ function AdminDashboard() {
                       kicker="Export detailed performance and behavior reports for all students"
                       right={<Users size={18} color="rgba(160,190,255,0.95)" />}
                     >
-                      <button className="btn primary" disabled>
+                      <button
+                        className="btn primary"
+                        type="button"
+                        disabled={exportBusy}
+                        onClick={() => runReportExport("student")}
+                      >
                         <Download size={16} />
-                        Export via backend
+                        {exportBusy ? "Working…" : "Generate export"}
                       </button>
                     </Card>
                     <Card
@@ -847,9 +1270,14 @@ function AdminDashboard() {
                       kicker="Export monitoring statistics and performance metrics for mentors"
                       right={<UserSquare2 size={18} color="rgba(160,190,255,0.95)" />}
                     >
-                      <button className="btn primary" disabled>
+                      <button
+                        className="btn primary"
+                        type="button"
+                        disabled={exportBusy}
+                        onClick={() => runReportExport("mentor")}
+                      >
                         <Download size={16} />
-                        Export via backend
+                        {exportBusy ? "Working…" : "Generate export"}
                       </button>
                     </Card>
                     <Card
@@ -857,9 +1285,14 @@ function AdminDashboard() {
                       kicker="Export comprehensive system-wide analytics and statistics"
                       right={<BarChart3 size={18} color="rgba(160,190,255,0.95)" />}
                     >
-                      <button className="btn primary" disabled>
+                      <button
+                        className="btn primary"
+                        type="button"
+                        disabled={exportBusy}
+                        onClick={() => runReportExport("system")}
+                      >
                         <Download size={16} />
-                        Export via backend
+                        {exportBusy ? "Working…" : "Generate export"}
                       </button>
                     </Card>
                   </div>
@@ -885,15 +1318,20 @@ function AdminDashboard() {
                             </tr>
                           ) : null}
                           {filteredExports.map((r) => (
-                            <tr key={r.report}>
+                            <tr key={r.id || r.report}>
                               <td style={{ fontWeight: 750 }}>{r.report}</td>
                               <td>{r.date}</td>
                               <td style={{ color: "rgba(255,255,255,0.72)" }}>{r.range}</td>
                               <td>{r.size}</td>
                               <td style={{ textAlign: "right" }}>
-                                <button className="btn" disabled>
+                                <button
+                                  className="btn"
+                                  type="button"
+                                  disabled={!r.id}
+                                  onClick={() => downloadReportFile(r.id)}
+                                >
                                   <Download size={16} />
-                                  Await export API
+                                  Download JSON
                                 </button>
                               </td>
                             </tr>
@@ -965,6 +1403,79 @@ function AdminDashboard() {
               </SectionShell>
             ) : null}
           </AnimatePresence>
+
+          {flagModal ? (
+            <div
+              className="modal-overlay"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="admin-flag-modal-title"
+              onClick={() => {
+                if (!flagSubmitting) closeFlagStudentModal();
+              }}
+            >
+              <div className="modal modal-flag" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-head">
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span className="pill red">
+                      <AlertTriangle size={14} />
+                    </span>
+                    <h2 className="modal-title" id="admin-flag-modal-title">
+                      Flag student
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={flagSubmitting}
+                    onClick={closeFlagStudentModal}
+                    aria-label="Close"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="modal-body">
+                  <p style={{ margin: "0 0 10px", color: "rgba(255,255,255,0.72)", fontSize: 13 }}>
+                    <strong style={{ color: "var(--adm-text)" }}>{flagModal.studentName}</strong>
+                    <span style={{ color: "rgba(255,255,255,0.55)" }}> · Violation: </span>
+                    {flagModal.violationType}
+                  </p>
+                  <label className="admin-flag-field">
+                    <span>Severity</span>
+                    <select
+                      className="select"
+                      value={flagSeverity}
+                      onChange={(e) => setFlagSeverity(e.target.value)}
+                      disabled={flagSubmitting}
+                    >
+                      <option value="Low">Low</option>
+                      <option value="Medium">Medium</option>
+                      <option value="High">High</option>
+                    </select>
+                  </label>
+                  <label className="admin-flag-field">
+                    <span>Reason</span>
+                    <textarea
+                      className="admin-flag-textarea"
+                      rows={4}
+                      value={flagReason}
+                      onChange={(e) => setFlagReason(e.target.value)}
+                      placeholder="Describe why this student is being flagged…"
+                      disabled={flagSubmitting}
+                    />
+                  </label>
+                  <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14 }}>
+                    <button type="button" className="btn" disabled={flagSubmitting} onClick={closeFlagStudentModal}>
+                      Cancel
+                    </button>
+                    <button type="button" className="btn danger" disabled={flagSubmitting} onClick={submitFlagStudent}>
+                      {flagSubmitting ? "Saving…" : "Confirm Flag"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </main>
       </div>
     </div>
