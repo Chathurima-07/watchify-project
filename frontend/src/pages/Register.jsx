@@ -75,48 +75,62 @@ const EyeIcon = ({ open }) => {
   );
 };
 
-function Login() {
+function Register() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [role, setRole] = useState("student");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const canSubmit = useMemo(() => {
-    return email.trim().length > 0 && password.length > 0 && !loading;
-  }, [email, password, loading]);
+    return (
+      username.trim().length > 0 &&
+      email.trim().length > 0 &&
+      password.length >= 6 &&
+      confirmPassword.length >= 6 &&
+      password === confirmPassword &&
+      !loading
+    );
+  }, [username, email, password, confirmPassword, loading]);
 
-  const handleLogin = async (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
     setError("");
-    setLoading(true);
 
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    setLoading(true);
     try {
-      const res = await fetch("http://localhost:5000/api/auth/login", {
+      const res = await fetch("http://localhost:5000/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // Keep backend contract intact (typically email + password).
-        body: JSON.stringify({ email, password }),
+        // Keep backend/API logic intact (your backend currently expects `name`).
+        body: JSON.stringify({
+          name: username,
+          email,
+          password,
+          role,
+        }),
       });
 
       const data = await res.json().catch(() => ({}));
 
-      if (res.ok && data?.token) {
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("user", JSON.stringify(data.user));
-
-        if (data.user.role === "admin") navigate("/admin");
-        else if (data.user.role === "mentor") navigate("/mentor");
-        else navigate("/student");
+      if (res.ok) {
+        navigate("/");
         return;
       }
 
-      setError(data?.message || "Login failed. Please check your credentials.");
+      setError(data?.message || "Registration failed. Please try again.");
     } catch {
-      setError("Unable to login. Please make sure the server is running.");
+      setError("Unable to register. Please make sure the server is running.");
     } finally {
       setLoading(false);
     }
@@ -137,26 +151,27 @@ function Login() {
 
         {error ? <div className="auth-error">{error}</div> : null}
 
-        <form className="auth-form" onSubmit={handleLogin}>
+        <form className="auth-form" onSubmit={handleRegister}>
           <div className="auth-field">
-            <label htmlFor="login-username">Username</label>
+            <label htmlFor="register-username">Username</label>
             <div className="auth-control">
               <input
-                id="login-username"
+                id="register-username"
                 className="auth-input"
                 placeholder="Enter your username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
+                required
               />
             </div>
           </div>
 
           <div className="auth-field">
-            <label htmlFor="login-email">Email</label>
+            <label htmlFor="register-email">Email</label>
             <div className="auth-control">
               <input
-                id="login-email"
+                id="register-email"
                 className="auth-input"
                 placeholder="Enter your email"
                 type="email"
@@ -169,16 +184,16 @@ function Login() {
           </div>
 
           <div className="auth-field">
-            <label htmlFor="login-password">Password</label>
+            <label htmlFor="register-password">Password</label>
             <div className="auth-control">
               <input
-                id="login-password"
+                id="register-password"
                 className="auth-input"
-                placeholder="Enter your password"
+                placeholder="Create a password"
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
+                autoComplete="new-password"
                 required
               />
               <button
@@ -193,10 +208,34 @@ function Login() {
           </div>
 
           <div className="auth-field">
-            <label htmlFor="login-role">Role</label>
+            <label htmlFor="register-confirm-password">Confirm Password</label>
+            <div className="auth-control">
+              <input
+                id="register-confirm-password"
+                className="auth-input"
+                placeholder="Confirm your password"
+                type={showConfirmPassword ? "text" : "password"}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                autoComplete="new-password"
+                required
+              />
+              <button
+                type="button"
+                className="auth-icon-btn"
+                aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                onClick={() => setShowConfirmPassword((v) => !v)}
+              >
+                <EyeIcon open={showConfirmPassword} />
+              </button>
+            </div>
+          </div>
+
+          <div className="auth-field">
+            <label htmlFor="register-role">Role</label>
             <div className="auth-control">
               <select
-                id="login-role"
+                id="register-role"
                 className="auth-select"
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
@@ -210,19 +249,15 @@ function Login() {
 
           <div className="auth-actions">
             <button className="auth-primary-btn" type="submit" disabled={!canSubmit}>
-              {loading ? "Logging in..." : "Login"}
+              {loading ? "Creating account..." : "Register"}
             </button>
-
-            <Link className="auth-forgot" to="#" onClick={(e) => e.preventDefault()}>
-              Forgot password?
-            </Link>
 
             <div className="auth-divider" />
 
             <div className="auth-link-row">
-              <span>Don’t have an account?</span>
-              <Link className="auth-link" to="/register">
-                Register
+              <span>Already have an account?</span>
+              <Link className="auth-link" to="/">
+                Login
               </Link>
             </div>
           </div>
@@ -232,4 +267,4 @@ function Login() {
   );
 }
 
-export default Login;
+export default Register;

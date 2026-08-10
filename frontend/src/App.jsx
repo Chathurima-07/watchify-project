@@ -1,23 +1,31 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
+import Register from "./pages/Register";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminStudentDetails from "./pages/AdminStudentDetails";
+import AdminMentorDetails from "./pages/AdminMentorDetails";
 import MentorDashboard from "./pages/MentorDashboard";
+import MentorExamDetails from "./pages/MentorExamDetails";
 import StudentDashboard from "./pages/StudentDashboard";
 import ExamPage from "./pages/ExamPage";
+import StudentResultDetails from "./pages/StudentResultDetails";
 
 
 // 🔒 Protected Route Component
 const ProtectedRoute = ({ children, role }) => {
   const token = localStorage.getItem("token");
-  const user = JSON.parse(localStorage.getItem("user"));
+  let user = null;
+  try {
+    user = JSON.parse(localStorage.getItem("user") || "null");
+  } catch {
+    user = null;
+  }
 
-  // not logged in
-  if (!token) {
+  if (!token || !user || typeof user !== "object") {
     return <Navigate to="/" />;
   }
 
-  // role mismatch
-  if (role && user?.role !== role) {
+  if (role && user.role !== role) {
     return <Navigate to="/" />;
   }
 
@@ -31,6 +39,7 @@ function App() {
 
         {/* Login */}
         <Route path="/" element={<Login />} />
+        <Route path="/register" element={<Register />} />
 
         {/* Admin */}
         <Route
@@ -41,6 +50,22 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/admin/student/:id"
+          element={
+            <ProtectedRoute role="admin">
+              <AdminStudentDetails />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/mentor/:id"
+          element={
+            <ProtectedRoute role="admin">
+              <AdminMentorDetails />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Mentor */}
         <Route
@@ -48,6 +73,14 @@ function App() {
           element={
             <ProtectedRoute role="mentor">
               <MentorDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/mentor/exam/:id"
+          element={
+            <ProtectedRoute role="mentor">
+              <MentorExamDetails />
             </ProtectedRoute>
           }
         />
@@ -69,6 +102,14 @@ function App() {
             </ProtectedRoute>
           }
 />
+        <Route
+          path="/student/result/:id"
+          element={
+            <ProtectedRoute role="student">
+              <StudentResultDetails />
+            </ProtectedRoute>
+          }
+        />
 
       </Routes>
     </BrowserRouter>

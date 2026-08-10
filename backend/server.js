@@ -7,9 +7,20 @@ import { protect } from "./middleware/authMiddleware.js";
 import { authorizeRoles } from "./middleware/roleMiddleware.js";
 import roleRoutes from "./routes/roleRoutes.js";
 import examRoutes from "./routes/examRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
+import mentorRoutes from "./routes/mentorRoutes.js";
+import violationRoutes from "./routes/violationRoutes.js";
+import studentRoutes from "./routes/studentRoutes.js";
+import flagRoutes from "./routes/flagRoutes.js";
 
 
 dotenv.config();
+
+if (!process.env.JWT_SECRET || String(process.env.JWT_SECRET).trim() === "") {
+  console.error("\n[Watchify] Missing JWT_SECRET in backend/.env");
+  console.error("  Copy backend/.env.example to backend/.env and set JWT_SECRET.\n");
+  process.exit(1);
+}
 
 const app = express();
 
@@ -19,6 +30,11 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api", roleRoutes);
 app.use("/api/exams", examRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/mentor", mentorRoutes);
+app.use("/api/violations", violationRoutes);
+app.use("/api/student", studentRoutes);
+app.use("/api/flags", flagRoutes);
 
 // DB connection
 connectDB();

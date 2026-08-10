@@ -14,6 +14,10 @@ export const protect = async (req, res, next) => {
 
       req.user = await User.findById(decoded.id).select("-password");
 
+      if (req.user?.role === "mentor" && req.user.mentorStatus === "disabled") {
+        return res.status(403).json({ message: "Account disabled. Contact an administrator." });
+      }
+
       next();
 
     } catch (error) {
